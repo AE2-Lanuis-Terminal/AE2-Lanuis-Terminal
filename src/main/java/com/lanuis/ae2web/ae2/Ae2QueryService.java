@@ -14,7 +14,6 @@ import appeng.api.stacks.AEKey;
 import appeng.api.stacks.GenericStack;
 import appeng.api.stacks.KeyCounter;
 import appeng.api.storage.MEStorage;
-import appeng.crafting.execution.CraftingCpuLogic;
 import appeng.me.cluster.implementations.CraftingCPUCluster;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -796,6 +795,7 @@ public final class Ae2QueryService {
                     }
                     writeJobProgress(job, cpu, status);
                     job.addProperty("elapsedNanos", Long.toString(Math.max(0, status.elapsedTimeNanos())));
+                    writeJobEntries(job, cpu);
                 } else {
                     job.addProperty("detail", cpu.toString());
                 }
@@ -930,6 +930,31 @@ public final class Ae2QueryService {
         }
         // 进度因容器物品等偶发略超总量；过大则视为脏数据
         return progress >= 0 && progress <= total * 2L;
+    }
+
+    /**
+     * 写入与游戏内合成 CPU GUI 一致的物品明细：stored / active / pending。
+     */
+    private static void writeJobEntries(JsonObject job, ICraftingCPU cpu) {
+        if (!(cpu instanceof CraftingCPUCluster cluster)) {
+            return;
+        }
+        JsonArray entries = new JsonArray();
+        for (Ae2CraftingJobAccess.StatusLine line : Ae2CraftingJobAccess.statusLines(cluster)) {
+            JsonObject row = new JsonObject();
+            JsonObject item = toStackDto(line.what(), Math.max(line.stored(), Math.max(line.active(), line.pending())), false);
+            if (item == null) {
+                continue;
+            }
+            row.add("item", item);
+            row.addProperty("stored", Long.toString(line.stored()));
+            row.addProperty("active", Long.toString(line.active()));
+            row.addProperty("pending", Long.toString(line.pending()));
+            entries.add(row);
+        }
+        if (!entries.isEmpty()) {
+            job.add("entries", entries);
+        }
     }
 
     /**

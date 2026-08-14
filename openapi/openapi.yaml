@@ -646,8 +646,14 @@ components:
       properties:
         id: { type: string }
         name: { type: string }
-        mode: { type: string }
+        mode: { type: string, description: "工作模式：crafting / processing / smithing / stonecutting / other" }
         slotIndex: { type: integer, description: "在供应器 patternInv 中的下标" }
+        encoder: { type: string, description: "编码人（样板物品 NBT 可选字段，无则省略）" }
+        recipeId: { type: string, description: "原版/数据包配方 ID（工作台样板常见）" }
+        craftingShape:
+          type: string
+          enum: [shaped, shapeless]
+          description: "有序/无序合成（仅 crafting 模式可能有）"
         primaryOutput: { $ref: "#/components/schemas/Item" }
         outputs:
           type: array
@@ -802,9 +808,44 @@ components:
       type: object
       additionalProperties: true
 
+    CraftJobStatusEntry:
+      type: object
+      description: |
+        与游戏内合成 CPU GUI 同源：CPU 缓冲库存 / 等待回库（制造中）/ 待推送样板产出。
+      required: [item, stored, active, pending]
+      properties:
+        item: { $ref: "#/components/schemas/Item" }
+        stored: { type: string, description: CPU 库存中已有数量 }
+        active: { type: string, description: 已发出、等待回库数量 }
+        pending: { type: string, description: 尚未推送的样板产出数量 }
+
+    CraftJob:
+      type: object
+      required: [cpuName, busy, status]
+      properties:
+        cpuName: { type: string }
+        busy: { type: boolean }
+        status: { type: string }
+        detail: { type: string }
+        output: { $ref: "#/components/schemas/Item" }
+        progress: { type: string }
+        totalItems: { type: string }
+        progressPercent: { type: number }
+        crafted: { type: string }
+        requested: { type: string }
+        elapsedNanos: { type: string }
+        entries:
+          type: array
+          description: 忙碌时合成进度明细（物品行）
+          items: { $ref: "#/components/schemas/CraftJobStatusEntry" }
+
     CraftJobsResponse:
       type: object
-      additionalProperties: true
+      required: [jobs]
+      properties:
+        jobs:
+          type: array
+          items: { $ref: "#/components/schemas/CraftJob" }
 
     CraftCancelRequest:
       type: object

@@ -1,25 +1,73 @@
 package com.lanuis.ae2web.ae2;
 
+import appeng.api.stacks.AEKey;
+import appeng.api.stacks.KeyCounter;
 import appeng.blockentity.crafting.CraftingMonitorBlockEntity;
 import appeng.crafting.execution.CraftingCpuLogic;
 import appeng.crafting.execution.ExecutingCraftingJob;
 import appeng.me.cluster.implementations.CraftingCPUCluster;
 import com.lanuis.ae2web.Ae2LanuisMod;
+import it.unimi.dsi.fastutil.objects.Object2LongMap;
 import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 跨包读取 AE2 合成任务 {@code remainingAmount}。
+ * 跨包读取 AE2 合成任务状态。
  * 不声明 {@code package appeng.*}（避免 JPMS split package）；
  * Forge 模组间 {@code privateLookupIn} 常失败，优先 {@link ObfuscationReflectionHelper}。
+ * <p>
+ * 明细行走 {@link CraftingCpuLogic} 公开 API（与游戏内合成 CPU GUI 同源）；
+ * {@code remainingAmount} 仍需反射。
+ * </p>
  */
 public final class Ae2CraftingJobAccess {
     private static final AtomicBoolean WARNED = new AtomicBoolean(false);
 
+    /** 与 AE2 {@code CraftingStatusEntry} 一致：CPU 库存 / 等待回库 / 待推送样板产出。 */
+    public record StatusLine(AEKey what, long stored, long active, long pending) {
+    }
+
     private Ae2CraftingJobAccess() {
+    }
+
+    /**
+     * 当前 CPU 作业物品明细（空闲或不可读时返回空列表）。
+     * 排序对齐 AE2：按 active+pending 降序，再按 stored 降序。
+     */
+    public static List<StatusLine> statusLines(CraftingCPUCluster cluster) {
+        if (cluster == null) {
+            return List.of();
+        }
+        CraftingCpuLogic logic = cluster.craftingLogic;
+        if (logic == null || !logic.hasJob()) {
+            return List.of();
+        }
+        KeyCounter all = new KeyCounter();
+        logic.getAllItems(all);
+        List<StatusLine> lines = new ArrayList<>();
+        for (Object2LongMap.Entry<AEKey> entry : all) {
+            AEKey key = entry.getKey();
+            if (key == null) {
+                continue;
+            }
+            long stored = Math.max(0, logic.getStored(key));
+            long active = Math.max(0, logic.getWaitingFor(key));
+            long pending = Math.max(0, logic.getPendingOutputs(key));
+            if (stored == 0 && active == 0 && pending == 0) {
+                continue;
+            }
+            lines.add(new StatusLine(key, stored, active, pending));
+        }
+        lines.sort(Comparator
+                .comparingLong((StatusLine l) -> l.active() + l.pending())
+                .thenComparingLong(StatusLine::stored)
+                .reversed());
+        return lines;
     }
 
     /**

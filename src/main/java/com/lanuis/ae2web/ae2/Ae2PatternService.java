@@ -27,6 +27,12 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.world.item.crafting.CraftingRecipe;
+import net.minecraft.world.item.crafting.ShapedRecipe;
+
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -682,8 +688,76 @@ public final class Ae2PatternService {
             if (defDto != null) {
                 dto.add("definition", defDto);
             }
+            enrichPatternMeta(dto, pattern, def);
         }
         return dto;
+    }
+
+    /**
+     * 附加可选元数据：编码人（NBT）、配方 ID、有序/无序。无数据则不写字段。
+     */
+    private static void enrichPatternMeta(JsonObject dto, IPatternDetails pattern, AEItemKey def) {
+        ItemStack stack;
+        try {
+            stack = def.toStack();
+        } catch (Throwable t) {
+            return;
+        }
+        if (stack == null || stack.isEmpty()) {
+            return;
+        }
+        CompoundTag tag = stack.getTag();
+        String encoder = readEncoderName(tag);
+        if (encoder != null) {
+            dto.addProperty("encoder", encoder);
+        }
+        if (tag != null && tag.contains("recipe", Tag.TAG_STRING)) {
+            String recipeId = tag.getString("recipe").trim();
+            if (!recipeId.isEmpty()) {
+                dto.addProperty("recipeId", recipeId);
+            }
+        }
+        if (pattern instanceof AECraftingPattern crafting) {
+            String shape = resolveCraftingShape(crafting);
+            if (shape != null) {
+                dto.addProperty("craftingShape", shape);
+            }
+        }
+    }
+
+    private static String readEncoderName(CompoundTag tag) {
+        if (tag == null) {
+            return null;
+        }
+        String[] keys = {
+                "encoder", "Encoder", "author", "Author", "encodedBy", "EncodedBy",
+                "createdBy", "CreatedBy", "playerName", "PlayerName"
+        };
+        for (String key : keys) {
+            if (tag.contains(key, Tag.TAG_STRING)) {
+                String v = tag.getString(key).trim();
+                if (!v.isEmpty()) {
+                    return v;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String resolveCraftingShape(AECraftingPattern crafting) {
+        try {
+            Field f = AECraftingPattern.class.getDeclaredField("recipe");
+            f.setAccessible(true);
+            Object recipe = f.get(crafting);
+            if (recipe instanceof ShapedRecipe) {
+                return "shaped";
+            }
+            if (recipe instanceof CraftingRecipe) {
+                return "shapeless";
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
     }
 
     /**
