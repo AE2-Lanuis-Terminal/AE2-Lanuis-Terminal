@@ -27,10 +27,9 @@ src/main/resources/web/
 web/node_modules/
 web/dist/
 web/package-lock.json
-client/node_modules/
-client/package-lock.json
-client/src-tauri/target/
-client/src-tauri/Cargo.lock
+
+# 可选：本机 Junction 到独立 Client 仓，勿当 submodule 提交
+/client/
 
 # OS / secrets
 *.pem

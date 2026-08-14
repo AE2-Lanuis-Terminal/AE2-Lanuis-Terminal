@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 仅保留 `web/` submodule；Client 改为独立仓，不再作为本仓 submodule
+
 ### Added
 
 - 发布流程文档与 CI/Release workflow 脚手架（默认不自动推送 GitHub Release / Modrinth）

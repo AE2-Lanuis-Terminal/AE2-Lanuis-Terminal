@@ -24,11 +24,11 @@
 1. Web 发行 PR → 合入 main →（通网后）打 tag vX.Y.Z + GitHub Release
 2. 主仓发行 PR：submodule web 钉到 vX.Y.Z，bump mod_version，写 CHANGELOG
    → 合入 main → 构建 jar →（通网后）GH Release + Modrinth
-3. Client 发行 PR：声明依赖 Web vX.Y.Z，bump 三处 version，写 CHANGELOG
+3. Client 发行 PR：`web` submodule 钉到 vX.Y.Z，bump 三处 version，写 CHANGELOG
    → 合入 main → 构建 NSIS + APK →（通网后）GH Release
 ```
 
-主仓与 Client **必须消费已存在的 Web tag**，不要并行抢发同一版本号却指向不同 Web 提交。
+主仓与 Client **必须消费已存在的 Web tag**（各自钉 `web` submodule），不要并行抢发同一版本号却指向不同 Web 提交。
 
 ## Changelog 约定（Keep a Changelog）
 
@@ -52,12 +52,12 @@
 |----|------|
 | Web | `package.json` → `version` |
 | 主仓 | `gradle.properties` → `mod_version`；`web` submodule → Web `vX.Y.Z` |
-| Client | `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` |
+| Client | `web` submodule → Web `vX.Y.Z`；`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` |
 
 ## 仓间依赖
 
-- 主仓：`web/`、`client/` 为 **git submodule**（见 [.gitmodules](../.gitmodules)）。克隆：`git clone --recurse-submodules …`
-- Client 独立开发：兄弟目录名为 `web`，或运行 `scripts/link-web.ps1` 指向 Web 仓；CI 会额外 checkout Web 到 `../web`。
+- 主仓与 Client 均以 `web/` 为 **git submodule**（见各自 `.gitmodules`）。克隆：`git clone --recurse-submodules …`
+- Client **不是**主仓 submodule，单独 clone / 发版。
 - **不要**把手拷 `web/dist` 进主仓 `src/main/resources/web`。
 
 ## Workflows

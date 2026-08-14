@@ -9,7 +9,7 @@
 - Git submodule：克隆时加 `--recurse-submodules`，或之后执行  
   `git submodule update --init --recursive`
 
-本地也可用 Windows Junction 指向已 clone 的 Web / Client 仓，但 **CI 与正式贡献以 [.gitmodules](../.gitmodules) 为准**。
+本地也可用 Windows Junction 指向已 clone 的 Web 仓，但 **CI 与正式贡献以 [.gitmodules](../.gitmodules) 为准**。Client 为独立仓，不作为本仓 submodule。
 
 ## 构建
 
