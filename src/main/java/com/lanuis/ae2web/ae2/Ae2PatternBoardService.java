@@ -34,19 +34,18 @@ public final class Ae2PatternBoardService {
     }
 
     /**
-     * 列出供应器及完整槽位；可选按 q/qOutput/qInput/mode 过滤样板（空槽在无筛选时保留）。
+     * 列出供应器及完整槽位；可选按 qOutput/qInput/mode 过滤样板（空槽在无筛选时保留）。
      */
     public static JsonObject listProviders(
             IGrid grid,
-            String query,
             String qOutput,
             String qInput,
             String modeFilter
     ) {
-        boolean filtering = hasFilter(query, qOutput, qInput, modeFilter);
+        boolean filtering = hasFilter(qOutput, qInput, modeFilter);
         List<JsonObject> boards = new ArrayList<>();
         for (ProviderHost host : collectHosts(grid)) {
-            JsonObject board = buildBoard(host, filtering, query, qOutput, qInput, modeFilter);
+            JsonObject board = buildBoard(host, filtering, qOutput, qInput, modeFilter);
             if (board != null) {
                 boards.add(board);
             }
@@ -275,7 +274,6 @@ public final class Ae2PatternBoardService {
     private static JsonObject buildBoard(
             ProviderHost host,
             boolean filtering,
-            String query,
             String qOutput,
             String qInput,
             String modeFilter
@@ -306,7 +304,7 @@ public final class Ae2PatternBoardService {
                     continue;
                 }
                 boolean match = Ae2PatternService.modeMatchesPublic(dto, modeFilter)
-                        && Ae2PatternService.queryMatchesPublic(dto, query, qOutput, qInput);
+                        && Ae2PatternService.queryMatchesPublic(dto, qOutput, qInput);
                 if (filtering && !match) {
                     continue;
                 }
@@ -331,7 +329,7 @@ public final class Ae2PatternBoardService {
                     continue;
                 }
                 if (!Ae2PatternService.modeMatchesPublic(dto, modeFilter)
-                        || !Ae2PatternService.queryMatchesPublic(dto, query, qOutput, qInput)) {
+                        || !Ae2PatternService.queryMatchesPublic(dto, qOutput, qInput)) {
                     continue;
                 }
                 JsonObject slot = new JsonObject();
@@ -448,9 +446,68 @@ public final class Ae2PatternBoardService {
         return -1;
     }
 
-    private static boolean hasFilter(String query, String qOutput, String qInput, String modeFilter) {
-        return (query != null && !query.isBlank())
-                || (qOutput != null && !qOutput.isBlank())
+    /**
+     * 将已编码样板写入可移动供应器空槽。
+     * @return 实际写入的 slotIndex；失败抛出带 code 前缀的 IllegalStateException
+     */
+    static int insertEncodedPattern(IGrid grid, String providerId, ItemStack encoded, Integer slotIndexOpt) {
+        if (encoded == null || encoded.isEmpty()) {
+            throw new IllegalStateException("invalid_recipe:Encoded stack empty");
+        }
+        ProviderHost host = null;
+        for (ProviderHost h : collectHosts(grid)) {
+            if (providerId.equals(h.providerId)) {
+                host = h;
+                break;
+            }
+        }
+        if (host == null) {
+            throw new IllegalStateException("provider_not_found:Provider not found: " + providerId);
+        }
+        if (!host.movable || host.inv == null) {
+            throw new IllegalStateException("not_movable:Provider is read-only");
+        }
+        int slot;
+        if (slotIndexOpt != null) {
+            slot = slotIndexOpt;
+            if (slot < 0 || slot >= host.inv.size()) {
+                throw new IllegalStateException("bad_slot:Invalid slotIndex");
+            }
+            ItemStack cur = host.inv.getStackInSlot(slot);
+            if (cur != null && !cur.isEmpty()) {
+                throw new IllegalStateException("slot_occupied:Slot occupied");
+            }
+        } else {
+            ItemStack[] snap = snapshot(host.inv);
+            slot = firstEmpty(snap, -1);
+            if (slot < 0) {
+                throw new IllegalStateException("no_empty_slot:No empty slot");
+            }
+        }
+        host.inv.setItemDirect(slot, encoded.copy());
+        return slot;
+    }
+
+    static JsonObject providerDtoById(IGrid grid, String providerId) {
+        for (ProviderHost h : collectHosts(grid)) {
+            if (providerId.equals(h.providerId)) {
+                return h.providerDto.deepCopy();
+            }
+        }
+        return null;
+    }
+
+    static Level levelForProvider(IGrid grid, String providerId) {
+        for (ProviderHost h : collectHosts(grid)) {
+            if (providerId.equals(h.providerId)) {
+                return h.level;
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasFilter(String qOutput, String qInput, String modeFilter) {
+        return (qOutput != null && !qOutput.isBlank())
                 || (qInput != null && !qInput.isBlank())
                 || (modeFilter != null && !modeFilter.isBlank() && !"all".equalsIgnoreCase(modeFilter.trim()));
     }

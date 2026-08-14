@@ -15,13 +15,11 @@ import java.util.Optional;
  * <p>
  * 绑定存档不保存完整物品实例，只存 itemId + NBT payload 字符串，
  * 以便离线/跨维度后仍能重建可被 {@link WirelessTerminalBinder} 解析的 ItemStack。
- * version/kind 字段预留向前兼容，旧数据可按版本分支迁移。
+ * version / kind 为协议头字段。
  * </p>
  */
 public final class NetworkLinkCodec {
-    /**
-     * 当前编解码协议版本；bump 时须同时兼容读旧 payload。
-     */
+    /** 当前编解码协议版本。 */
     public static final int VERSION = 1;
 
     /**
@@ -43,7 +41,7 @@ public final class NetworkLinkCodec {
      */
     public static JsonObject encode(ItemStack stack, CompoundTag linkTag) {
         JsonObject obj = new JsonObject();
-        // 协议头：读写双方据此决定是否迁移
+        // 协议头
         obj.addProperty("version", VERSION);
         // kind 标明这是 AE2 GridLinkable 快照，而非坐标硬编码
         obj.addProperty("kind", "ae2_grid_linkable");
@@ -66,7 +64,7 @@ public final class NetworkLinkCodec {
      * @return 带 NBT 的栈；失败为空
      */
     public static Optional<ItemStack> decodeToStack(JsonObject networkLink) {
-        // 缺 itemId：旧损坏数据或手动编辑错误
+        // 缺 itemId：损坏数据或手动编辑错误
         if (networkLink == null || !networkLink.has("itemId")) {
             return Optional.empty();
         }

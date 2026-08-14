@@ -141,7 +141,6 @@ public final class PasswordCommands {
             return 1;
         }
         JsonObject summary = binding.get().linkSummary;
-        // summary 可能为空（旧数据）；仍报告「已绑定」
         String text = summary == null ? "(无摘要)" : summary.toString();
         source.sendSuccess(() -> Component.literal("已绑定：" + text), false);
         WebLink link = resolveWebLink(player.getGameProfile().getName());

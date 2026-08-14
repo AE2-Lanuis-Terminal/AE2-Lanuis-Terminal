@@ -199,7 +199,6 @@ public final class Ae2QueryService {
     /**
      * 网络摘要：是否通电、库存种类数（物品+流体）、CPU 总数与忙碌数。
      * online = {@link appeng.api.networking.energy.IEnergyService#isNetworkPowered()}，断电为 false。
-     * 字段名 itemTypes 保持 API 兼容。
      */
     public static JsonObject networkSummary(IGrid grid) {
         return ensureGridSnap(grid).network.deepCopy();
@@ -489,11 +488,30 @@ public final class Ae2QueryService {
         }
         root.add("missing", missing);
 
+        KeyCounter networkStock = new KeyCounter();
+        MEStorage storage = grid.getStorageService().getInventory();
+        storage.getAvailableStacks(networkStock);
+
         JsonArray used = new JsonArray();
         var usedItems = plan.usedItems();
+        java.util.LinkedHashSet<AEKey> materialKeys = new java.util.LinkedHashSet<>();
         for (AEKey k : usedItems.keySet()) {
-            JsonObject dto = toStackDto(k, usedItems.get(k), false);
+            materialKeys.add(k);
+        }
+        for (AEKey k : missingItems.keySet()) {
+            materialKeys.add(k);
+        }
+        for (AEKey k : materialKeys) {
+            long usedAmt = usedItems.get(k);
+            long missAmt = missingItems.get(k);
+            long total = usedAmt + missAmt;
+            long stock = networkStock.get(k);
+            long toCraft = Math.max(0L, total - stock);
+            JsonObject dto = toStackDto(k, total, false);
             if (dto != null) {
+                dto.addProperty("total", Long.toString(total));
+                dto.addProperty("stock", Long.toString(stock));
+                dto.addProperty("toCraft", Long.toString(toCraft));
                 used.add(dto);
             }
         }
@@ -734,11 +752,6 @@ public final class Ae2QueryService {
             root.addProperty("jobId", result.link().getCraftingID().toString());
         }
         return root;
-    }
-
-    /** 兼容旧调用：自动选 CPU。 */
-    public static JsonObject submit(MinecraftServer server, IGrid grid, UUID playerUuid, String planId) throws Exception {
-        return submit(server, grid, playerUuid, planId, null);
     }
 
     private static ICraftingCPU findCpuByName(IGrid grid, String cpuName) {
@@ -1005,7 +1018,8 @@ public final class Ae2QueryService {
      * 构造 AE2 IActionSource：在线玩家优先 ofPlayer；离线则尝试 empty/EMPTY。
      * 两者皆不可用时拒绝提交，避免无安全上下文的「幽灵」合成。
      */
-    private static IActionSource actionSource(MinecraftServer server, UUID playerUuid) {
+    /** 供 Encoding 等写库存操作复用。 */
+    static IActionSource actionSource(MinecraftServer server, UUID playerUuid) {
         ServerPlayer online = server.getPlayerList().getPlayer(playerUuid);
         if (online != null) {
             return playerActionSource(online);
@@ -1049,7 +1063,8 @@ public final class Ae2QueryService {
      * 解析前端传来的物品键：支持 {@code item:ns:path}、{@code ns:path}，
      * 以及带 NBT 花括号前缀的 id（花括号后内容当前丢弃，仅用注册名建栈）。
      */
-    private static AEItemKey parseItemKey(String key) {
+    /** 供 Encoding 等解析前端 item key。 */
+    static AEItemKey parseItemKey(String key) {
         // formats: item:minecraft:iron_ingot  OR minecraft:iron_ingot  OR ae key toString
         String raw = key;
         if (raw.startsWith("item:")) {
@@ -1093,7 +1108,6 @@ public final class Ae2QueryService {
         dto.addProperty("displayName", itemKey.getDisplayName().getString());
         dto.addProperty("amount", Long.toString(amount));
         dto.addProperty("craftable", craftable);
-        dto.addProperty("isFluid", false);
         dto.addProperty("amountPerUnit", itemKey.getAmountPerUnit());
         // 图标路由由前端/静态服务约定；此处只给相对路径
         dto.addProperty("iconUrl", "/api/v1/icons/item/" + id.replace(":", "/"));
@@ -1113,7 +1127,6 @@ public final class Ae2QueryService {
         dto.addProperty("displayName", fluidKey.getDisplayName().getString());
         dto.addProperty("amount", Long.toString(amount));
         dto.addProperty("craftable", craftable);
-        dto.addProperty("isFluid", true);
         dto.addProperty("amountPerUnit", fluidKey.getAmountPerUnit());
         dto.addProperty("iconUrl", "/api/v1/icons/fluid/" + id.replace(":", "/"));
         return dto;
@@ -1131,7 +1144,6 @@ public final class Ae2QueryService {
         dto.addProperty("displayName", key.getDisplayName().getString());
         dto.addProperty("amount", Long.toString(amount));
         dto.addProperty("craftable", craftable);
-        dto.addProperty("isFluid", false);
         dto.addProperty("amountPerUnit", key.getAmountPerUnit());
         dto.addProperty("iconUrl", "");
         return dto;
@@ -1166,7 +1178,7 @@ public final class Ae2QueryService {
                 || dto.get("id").getAsString().toLowerCase(Locale.ROOT).contains(q);
     }
 
-    /** 优先读 kind；兼容仅有 isFluid 的旧缓存/客户端 */
+    /** 读取 DTO 的 kind；缺省视为 item */
     private static String resolveDtoKind(JsonObject dto) {
         if (dto.has("kind") && !dto.get("kind").isJsonNull()) {
             String k = dto.get("kind").getAsString();
@@ -1174,8 +1186,7 @@ public final class Ae2QueryService {
                 return k;
             }
         }
-        boolean isFluid = dto.has("isFluid") && dto.get("isFluid").getAsBoolean();
-        return isFluid ? "fluid" : "item";
+        return "item";
     }
 
     /** all / craftable 需要把零库存可合成行并入列表 */

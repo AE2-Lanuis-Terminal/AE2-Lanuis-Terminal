@@ -187,7 +187,6 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - $ref: "#/components/parameters/q"
         - name: qOutput
           in: query
           schema: { type: string }
@@ -217,7 +216,6 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - $ref: "#/components/parameters/q"
         - name: qOutput
           in: query
           schema: { type: string }
@@ -260,6 +258,89 @@ paths:
                 $ref: "#/components/schemas/OkResult"
         "400":
           description: 校验失败（槽空/目标满/供应器不存在等）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+
+  /api/v1/encoding/status:
+    get:
+      operationId: encodingStatus
+      summary: 编码页状态（空白样板库存等）
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EncodingStatusResponse"
+
+  /api/v1/encoding/resolve:
+    post:
+      operationId: encodingResolve
+      summary: 预览编码结果（匹配配方 / 校验格子）
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EncodingResolveRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EncodingResolveResponse"
+
+  /api/v1/encoding/stonecutting/options:
+    post:
+      operationId: encodingStonecuttingOptions
+      summary: 切石可选配方列表
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EncodingStonecuttingOptionsRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EncodingStonecuttingOptionsResponse"
+
+  /api/v1/encoding/encode:
+    post:
+      operationId: encodingEncode
+      summary: 编码空白样板并写入供应器空槽
+      description: |
+        消耗 ME 中 1 张空白样板，编码后写入指定供应器空槽。
+        slotIndex 省略则填第一个空槽。写入失败时回滚空白样板。
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EncodingEncodeRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EncodingEncodeResponse"
+        "400":
+          description: 校验失败
           content:
             application/json:
               schema:
@@ -568,10 +649,13 @@ components:
         displayName: { type: string }
         amount: { type: string }
         craftable: { type: boolean }
-        kind: { type: string }
-        isFluid: { type: boolean, deprecated: true }
+        kind: { type: string, description: "item / fluid / other" }
         amountPerUnit: { type: number }
         iconUrl: { type: string, description: "相对路径，如 /api/v1/icons/item/minecraft/stone；对应预烘焙 PNG" }
+        # 合成计划 usedItems 可选：材料汇总列
+        total: { type: string, description: "需求总数（计划 used+missing）" }
+        stock: { type: string, description: "ME 库存数量" }
+        toCraft: { type: string, description: "仍需合成/补齐数量 max(0, total-stock)" }
 
     NetworkSummary:
       type: object
@@ -852,3 +936,102 @@ components:
       required: [cpuName]
       properties:
         cpuName: { type: string }
+
+    EncodingSlot:
+      type: object
+      description: 编码格子引用；key 优先（如 item:minecraft:stone），否则 id
+      properties:
+        key: { type: string }
+        id: { type: string }
+        amount: { type: string, description: "缺省 1" }
+        index: { type: integer, description: "稀疏下标；crafting 0–8" }
+
+    EncodingStatusResponse:
+      type: object
+      required: [ok, blankPatterns, modes]
+      properties:
+        ok: { type: boolean }
+        blankPatterns: { type: string, description: "ME 中空白样板数量" }
+        modes:
+          type: object
+          additionalProperties: { type: boolean }
+          description: "各模式是否可用，如 crafting/processing/smithing/stonecutting"
+
+    EncodingResolveRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode: { type: string, enum: [crafting, processing, smithing, stonecutting] }
+        inputs:
+          type: array
+          items: { $ref: "#/components/schemas/EncodingSlot" }
+        outputs:
+          type: array
+          items: { $ref: "#/components/schemas/EncodingSlot" }
+        substitute: { type: boolean }
+        substituteFluids: { type: boolean }
+        recipeId: { type: string, description: "切石/锻造等已选配方" }
+
+    EncodingResolveResponse:
+      type: object
+      required: [ok, canEncode]
+      properties:
+        ok: { type: boolean }
+        canEncode: { type: boolean }
+        recipeId: { type: string }
+        craftingShape: { type: string, enum: [shaped, shapeless] }
+        primaryOutput: { $ref: "#/components/schemas/Item" }
+        outputs:
+          type: array
+          items: { $ref: "#/components/schemas/Item" }
+        warning: { type: string }
+
+    EncodingStonecuttingOptionsRequest:
+      type: object
+      required: [input]
+      properties:
+        input: { $ref: "#/components/schemas/EncodingSlot" }
+
+    EncodingStonecuttingOption:
+      type: object
+      required: [recipeId, output]
+      properties:
+        recipeId: { type: string }
+        output: { $ref: "#/components/schemas/Item" }
+
+    EncodingStonecuttingOptionsResponse:
+      type: object
+      required: [ok, options]
+      properties:
+        ok: { type: boolean }
+        options:
+          type: array
+          items: { $ref: "#/components/schemas/EncodingStonecuttingOption" }
+
+    EncodingEncodeRequest:
+      type: object
+      required: [mode, providerId]
+      properties:
+        mode: { type: string, enum: [crafting, processing, smithing, stonecutting] }
+        inputs:
+          type: array
+          items: { $ref: "#/components/schemas/EncodingSlot" }
+        outputs:
+          type: array
+          items: { $ref: "#/components/schemas/EncodingSlot" }
+        substitute: { type: boolean }
+        substituteFluids: { type: boolean }
+        recipeId: { type: string }
+        providerId: { type: string }
+        slotIndex: { type: integer, description: "省略则首个空槽" }
+
+    EncodingEncodeResponse:
+      type: object
+      required: [ok, providerId, slotIndex]
+      properties:
+        ok: { type: boolean }
+        providerId: { type: string }
+        slotIndex: { type: integer }
+        pattern: { $ref: "#/components/schemas/Pattern" }
+        message: { type: string }
+        code: { type: string }

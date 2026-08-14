@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.lanuis.ae2web.Ae2LanuisMod;
 import com.lanuis.ae2web.ae2.AdminBindingService;
+import com.lanuis.ae2web.ae2.Ae2EncodingService;
 import com.lanuis.ae2web.ae2.Ae2PatternBoardService;
 import com.lanuis.ae2web.ae2.Ae2PatternService;
 import com.lanuis.ae2web.ae2.Ae2QueryService;
@@ -140,6 +141,10 @@ public final class HttpServerLifecycle {
         http.createContext("/api/v1/pattern-providers", HttpServerLifecycle::patternProviders);
         http.createContext("/api/v1/patterns/move", HttpServerLifecycle::patternsMove);
         http.createContext("/api/v1/patterns", HttpServerLifecycle::patterns);
+        http.createContext("/api/v1/encoding/status", HttpServerLifecycle::encodingStatus);
+        http.createContext("/api/v1/encoding/resolve", HttpServerLifecycle::encodingResolve);
+        http.createContext("/api/v1/encoding/stonecutting/options", HttpServerLifecycle::encodingStonecuttingOptions);
+        http.createContext("/api/v1/encoding/encode", HttpServerLifecycle::encodingEncode);
         http.createContext("/api/v1/crafting/catalog", HttpServerLifecycle::catalog);
         http.createContext("/api/v1/crafting/plan", HttpServerLifecycle::plan);
         http.createContext("/api/v1/crafting/submit", HttpServerLifecycle::submit);
@@ -563,7 +568,7 @@ public final class HttpServerLifecycle {
     }
 
     /**
-     * ME 已安装样板分页；查询参数 q / qOutput / qInput / mode / page / pageSize。
+     * ME 已安装样板分页；查询参数 qOutput / qInput / mode / page / pageSize。
      */
     private static void patterns(HttpExchange ex) throws IOException {
         if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) {
@@ -574,7 +579,6 @@ public final class HttpServerLifecycle {
             Map<String, String> q = query(ex);
             JsonObject result = Ae2PatternService.list(
                     grid,
-                    q.getOrDefault("q", ""),
                     q.getOrDefault("qOutput", ""),
                     q.getOrDefault("qInput", ""),
                     q.getOrDefault("mode", ""),
@@ -597,7 +601,6 @@ public final class HttpServerLifecycle {
             Map<String, String> q = query(ex);
             JsonObject result = Ae2PatternBoardService.listProviders(
                     grid,
-                    q.getOrDefault("q", ""),
                     q.getOrDefault("qOutput", ""),
                     q.getOrDefault("qInput", ""),
                     q.getOrDefault("mode", "")
@@ -626,6 +629,72 @@ public final class HttpServerLifecycle {
                         sess.actingAsUuid(),
                         null,
                         body.has("moves") ? ("ops=" + body.getAsJsonArray("moves").size()) : null
+                );
+            }
+            sendJson(ex, ok ? 200 : 400, result);
+        });
+    }
+
+    /** GET 空白样板库存与可用模式。 */
+    private static void encodingStatus(HttpExchange ex) throws IOException {
+        if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendError(ex, 405, "method_not_allowed", "GET only");
+            return;
+        }
+        authedGrid(ex, (mc, grid, sess) -> sendJson(ex, 200, Ae2EncodingService.status(grid)));
+    }
+
+    /** POST 预览编码结果。 */
+    private static void encodingResolve(HttpExchange ex) throws IOException {
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendError(ex, 405, "method_not_allowed", "POST only");
+            return;
+        }
+        JsonObject body = readJson(ex);
+        authedGrid(ex, (mc, grid, sess) -> {
+            JsonObject result = Ae2EncodingService.resolve(mc, grid, body);
+            boolean ok = result.has("ok") && result.get("ok").getAsBoolean();
+            sendJson(ex, ok ? 200 : 400, result);
+        });
+    }
+
+    /** POST 切石可选配方。 */
+    private static void encodingStonecuttingOptions(HttpExchange ex) throws IOException {
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendError(ex, 405, "method_not_allowed", "POST only");
+            return;
+        }
+        JsonObject body = readJson(ex);
+        authedGrid(ex, (mc, grid, sess) -> {
+            JsonObject result = Ae2EncodingService.stonecuttingOptions(mc, body);
+            boolean ok = result.has("ok") && result.get("ok").getAsBoolean();
+            sendJson(ex, ok ? 200 : 400, result);
+        });
+    }
+
+    /** POST 编码并写入供应器空槽。 */
+    private static void encodingEncode(HttpExchange ex) throws IOException {
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendError(ex, 405, "method_not_allowed", "POST only");
+            return;
+        }
+        JsonObject body = readJson(ex);
+        authedGrid(ex, (mc, grid, sess) -> {
+            JsonObject result = Ae2EncodingService.encode(mc, grid, sess.playerUuid(), sess.playerName(), body);
+            boolean ok = result.has("ok") && result.get("ok").getAsBoolean();
+            if (ok) {
+                String detail = (body.has("mode") ? body.get("mode").getAsString() : "?")
+                        + " → "
+                        + (result.has("providerId") ? result.get("providerId").getAsString() : "?")
+                        + "#"
+                        + (result.has("slotIndex") ? result.get("slotIndex").getAsInt() : -1);
+                AuditLogStore.append(
+                        "pattern_encode",
+                        sess.playerUuid(),
+                        sess.playerName(),
+                        sess.actingAsUuid(),
+                        null,
+                        detail
                 );
             }
             sendJson(ex, ok ? 200 : 400, result);

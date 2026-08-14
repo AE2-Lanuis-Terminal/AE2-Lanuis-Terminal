@@ -55,7 +55,6 @@ public final class Ae2PatternService {
 
     public static JsonObject list(
             IGrid grid,
-            String query,
             String qOutput,
             String qInput,
             String modeFilter,
@@ -73,7 +72,7 @@ public final class Ae2PatternService {
             if (!modeMatches(dto, modeFilter)) {
                 continue;
             }
-            if (!queryMatches(dto, query, qOutput, qInput)) {
+            if (!queryMatches(dto, qOutput, qInput)) {
                 continue;
             }
             all.add(dto);
@@ -84,7 +83,7 @@ public final class Ae2PatternService {
             if (dto == null) {
                 continue;
             }
-            if (!modeMatches(dto, modeFilter) || !queryMatches(dto, query, qOutput, qInput)) {
+            if (!modeMatches(dto, modeFilter) || !queryMatches(dto, qOutput, qInput)) {
                 continue;
             }
             all.add(dto);
@@ -108,11 +107,6 @@ public final class Ae2PatternService {
         return root;
     }
 
-    /** 兼容旧签名（仅通用 q）。 */
-    public static JsonObject list(IGrid grid, String query, String modeFilter, int page, int pageSize) {
-        return list(grid, query, "", "", modeFilter, page, pageSize);
-    }
-
     private record PatternEntry(IPatternDetails pattern, JsonObject provider) {
     }
 
@@ -129,8 +123,8 @@ public final class Ae2PatternService {
         return modeMatches(dto, modeFilter);
     }
 
-    static boolean queryMatchesPublic(JsonObject dto, String query, String qOutput, String qInput) {
-        return queryMatches(dto, query, qOutput, qInput);
+    static boolean queryMatchesPublic(JsonObject dto, String qOutput, String qInput) {
+        return queryMatches(dto, qOutput, qInput);
     }
 
     /**
@@ -879,30 +873,21 @@ public final class Ae2PatternService {
     }
 
     /**
-     * q：产出或输入（OR，兼容旧客户端）。
-     * qOutput / qInput：分别约束；两者都有时 AND。
+     * qOutput / qInput：分别约束；两者都有时 AND；皆空则不过滤。
      */
-    private static boolean queryMatches(JsonObject dto, String query, String qOutput, String qInput) {
+    private static boolean queryMatches(JsonObject dto, String qOutput, String qInput) {
         boolean hasOut = qOutput != null && !qOutput.isBlank();
         boolean hasIn = qInput != null && !qInput.isBlank();
-        if (hasOut || hasIn) {
-            if (hasOut && !matchesOutput(dto, qOutput.trim().toLowerCase(Locale.ROOT))) {
-                return false;
-            }
-            if (hasIn && !matchesInput(dto, qInput.trim().toLowerCase(Locale.ROOT))) {
-                return false;
-            }
+        if (!hasOut && !hasIn) {
             return true;
         }
-        if (query == null || query.isBlank()) {
-            return true;
+        if (hasOut && !matchesOutput(dto, qOutput.trim().toLowerCase(Locale.ROOT))) {
+            return false;
         }
-        String q = query.trim().toLowerCase(Locale.ROOT);
-        if (matchesName(dto, q) || matchesOutput(dto, q) || matchesInput(dto, q)) {
-            return true;
+        if (hasIn && !matchesInput(dto, qInput.trim().toLowerCase(Locale.ROOT))) {
+            return false;
         }
-        return dto.get("mode").getAsString().toLowerCase(Locale.ROOT).contains(q)
-                || dto.get("id").getAsString().toLowerCase(Locale.ROOT).contains(q);
+        return true;
     }
 
     private static boolean matchesOutput(JsonObject dto, String q) {
