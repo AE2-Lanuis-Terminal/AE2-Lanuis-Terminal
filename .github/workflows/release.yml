@@ -1,0 +1,131 @@
+# 发行：合入 main 且 CHANGELOG 新增 ## [X.Y.Z] 时构建；默认只上传 artifact
+# 通网后将 env.PUBLISH 改为 true，并配置 MODRINTH_* secrets
+name: release
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      force_version:
+        description: '强制当作发行版本（如 0.2.0）；空则仅看 CHANGELOG diff'
+        required: false
+        default: ''
+
+env:
+  # 通网并完成分支保护 / secrets 后改为 true
+  PUBLISH: 'false'
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      is_release: ${{ steps.detect.outputs.is_release }}
+      version: ${{ steps.detect.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - id: detect
+        shell: bash
+        run: |
+          chmod +x scripts/is-release-changelog.sh
+          BASE="origin/main"
+          if [[ "${{ github.event_name }}" == "push" && -n "${{ github.event.before }}" && "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
+            BASE="${{ github.event.before }}"
+          fi
+          set +e
+          OUT="$(./scripts/is-release-changelog.sh "$BASE" 2>/dev/null)"
+          CODE=$?
+          set -e
+          echo "base=$BASE"
+          echo "$OUT"
+          IS=false
+          VER=""
+          if [[ "$CODE" -eq 0 ]]; then
+            IS=true
+            VER="$(echo "$OUT" | sed -n 's/^RELEASE_VERSION=//p' | head -1)"
+          fi
+          if [[ -n "${{ inputs.force_version }}" ]]; then
+            IS=true
+            VER="${{ inputs.force_version }}"
+          fi
+          echo "is_release=$IS" >> "$GITHUB_OUTPUT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+  build-release:
+    needs: detect
+    if: needs.detect.outputs.is_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package.json
+
+      - name: Verify mod_version matches release
+        if: needs.detect.outputs.version != ''
+        shell: bash
+        run: |
+          EXPECT="${{ needs.detect.outputs.version }}"
+          ACTUAL="$(grep -E '^mod_version=' gradle.properties | cut -d= -f2)"
+          echo "expect=$EXPECT actual=$ACTUAL"
+          test "$ACTUAL" = "$EXPECT"
+
+      - name: Build mod
+        run: ./gradlew build --no-daemon
+
+      - name: Collect jar
+        id: jar
+        shell: bash
+        run: |
+          JAR="$(ls build/libs/ae2lanuis-*.jar | grep -v '\-thin\.jar$' | head -1)"
+          echo "jar=$JAR" >> "$GITHUB_OUTPUT"
+          echo "Using $JAR"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ae2lanuis-${{ needs.detect.outputs.version || 'release' }}
+          path: ${{ steps.jar.outputs.jar }}
+
+      - name: Create GitHub Release
+        if: ${{ env.PUBLISH == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.detect.outputs.version }}
+          name: Server v${{ needs.detect.outputs.version }}
+          body_path: CHANGELOG.md
+          files: ${{ steps.jar.outputs.jar }}
+          generate_release_notes: false
+
+      # 通网后启用：配置 MODRINTH_TOKEN、MODRINTH_PROJECT_ID
+      - name: Upload to Modrinth
+        if: ${{ env.PUBLISH == 'true' && secrets.MODRINTH_TOKEN != '' }}
+        uses: Kir-Antipov/mc-publish@v3.3
+        with:
+          modrinth-id: ${{ secrets.MODRINTH_PROJECT_ID }}
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          files: ${{ steps.jar.outputs.jar }}
+          name: AE2 Lanuis Terminal ${{ needs.detect.outputs.version }}
+          version: ${{ needs.detect.outputs.version }}
+          version-type: release
+          loaders: forge
+          game-versions: '1.20.1'
+          java: 17

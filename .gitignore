@@ -1,0 +1,37 @@
+# Root
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.iml
+.DS_Store
+Thumbs.db
+dist/
+.tmp-*
+.tmp-*/
+
+# Java / Gradle
+.gradle/
+bin/
+build/
+out/
+run/
+run-data/
+*.log
+logs/
+mcmodsrepo/
+# 前端产物由 Gradle 从 web/dist 嵌入；勿手拷进模组源码树
+src/main/resources/web/
+
+# Submodule build artifacts (also ignored in child repos)
+web/node_modules/
+web/dist/
+web/package-lock.json
+client/node_modules/
+client/package-lock.json
+client/src-tauri/target/
+client/src-tauri/Cargo.lock
+
+# OS / secrets
+*.pem
+bindings.json

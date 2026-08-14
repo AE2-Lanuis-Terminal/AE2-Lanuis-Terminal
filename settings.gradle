@@ -1,0 +1,17 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        maven { url = uri('https://maven.minecraftforge.net/') }
+    }
+}
+
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
+}
+
+rootProject.name = 'ae2lanuis'
+
+// 前端为 git submodule（path=web）；需先 clone --recurse-submodules 或 submodule update --init
+if (file('web/build.gradle').exists()) {
+    include 'web'
+}

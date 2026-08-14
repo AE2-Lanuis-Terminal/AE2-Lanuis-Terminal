@@ -1,0 +1,813 @@
+openapi: 3.0.3
+info:
+  title: AE2 Lanuis Terminal API
+  description: |
+    Forge 模组 HTTP API（`/api/v1`）。权威契约位于主仓 `openapi/openapi.yaml`。
+    WebSocket 库存推送见 `docs/websocket.md`（默认与 HTTP 同端口；`websocket.port` 可改独立端口）。
+  version: 0.1.0
+servers:
+  - url: http://127.0.0.1:8765
+    description: 本地模组默认 HTTP
+
+paths:
+  /api/v1/health:
+    get:
+      operationId: health
+      summary: 健康检查与 WebSocket 发现
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/v1/auth/login:
+    post:
+      operationId: login
+      summary: 登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      summary: 注销（Bearer，幂等）
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+
+  /api/v1/auth/session:
+    get:
+      operationId: session
+      summary: 会话探测
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+
+  /api/v1/admin/bindings:
+    get:
+      operationId: adminListBindings
+      summary: 管理员查看全部绑定端点与在线状态（需 OP）
+      description: |
+        要求当前会话玩家达到 `auth.adminPermissionLevel`（默认 2，与原版 OP/gamemaster 一致）。
+        返回每位已设密玩家的终端端点摘要、玩家是否在线、AE 网络是否可解析/通电。
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminBindingsResponse"
+        "401":
+          description: 未登录
+        "403":
+          description: 非管理员
+
+  /api/v1/admin/session/act-as:
+    post:
+      operationId: adminActAs
+      summary: 管理员切入目标玩家绑定（进入其用户端网络）
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [playerUuid]
+              properties:
+                playerUuid: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "403":
+          description: 非管理员
+        "503":
+          description: 网络不可达或离线
+
+  /api/v1/admin/session/clear-act-as:
+    post:
+      operationId: adminClearActAs
+      summary: 退出切入，回到管理员本人绑定
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+
+  /api/v1/admin/audit:
+    get:
+      operationId: adminAudit
+      summary: 审计日志分页（需 OP）
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/q"
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAuditResponse"
+        "403":
+          description: 非管理员
+
+  /api/v1/items:
+    get:
+      operationId: listItems
+      summary: ME 库存分页
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/q"
+        - name: kind
+          in: query
+          schema: { type: string, enum: [all, item, fluid, other] }
+        - name: filter
+          in: query
+          schema: { type: string, enum: [all, stocked, craftable] }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [name, amount, mod] }
+        - name: order
+          in: query
+          schema: { type: string, enum: [asc, desc] }
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemsResponse"
+
+  /api/v1/patterns:
+    get:
+      operationId: listPatterns
+      summary: ME 已安装样板分页
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/q"
+        - name: qOutput
+          in: query
+          schema: { type: string }
+        - name: qInput
+          in: query
+          schema: { type: string }
+        - name: mode
+          in: query
+          schema: { type: string }
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatternsResponse"
+
+  /api/v1/pattern-providers:
+    get:
+      operationId: listPatternProviders
+      summary: 样板供应器槽位板（含空槽与容量）
+      description: |
+        返回网络内可枚举的样板供应器及完整槽位（含空槽）。
+        Patterns 页主数据源；搜索仍可用 GET /api/v1/patterns。
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/q"
+        - name: qOutput
+          in: query
+          schema: { type: string }
+        - name: qInput
+          in: query
+          schema: { type: string }
+        - name: mode
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatternProvidersResponse"
+
+  /api/v1/patterns/move:
+    post:
+      operationId: movePatterns
+      summary: 移动/重排样板槽位（支持批量，事务性）
+      description: |
+        在供应器 patternInv 槽位间移动或交换。
+        to.slotIndex 省略时填入目标供应器第一个空槽。
+        任一条失败则全部回滚。
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatternMoveRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+        "400":
+          description: 校验失败（槽空/目标满/供应器不存在等）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+
+  /api/v1/crafting/catalog:
+    get:
+      operationId: craftingCatalog
+      summary: 可合成目录
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/q"
+        - name: sort
+          in: query
+          schema: { type: string }
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/pageSize"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PageItem"
+
+  /api/v1/crafting/plan:
+    post:
+      operationId: craftingPlan
+      summary: 合成计划
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CraftPlanRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CraftPlanResponse"
+
+  /api/v1/crafting/submit:
+    post:
+      operationId: craftingSubmit
+      summary: 提交合成
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CraftSubmitRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CraftSubmitResponse"
+
+  /api/v1/crafting/jobs:
+    get:
+      operationId: craftingJobs
+      summary: 进行中作业
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CraftJobsResponse"
+
+  /api/v1/crafting/cancel:
+    post:
+      operationId: craftingCancel
+      summary: 取消合成
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CraftCancelRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+
+  /api/v1/icons/{kind}/{ns}/{path}:
+    get:
+      operationId: itemIcon
+      summary: 预烘焙物品/流体图标 PNG（无鉴权，供 img）
+      description: |
+        从服务端游戏根目录 `aeKeyResources/{kind}/{ns}_{path}.png` 读取。
+        须先在单人世界执行 `/ae2lanuis resources render` 并上传资源目录；缺失返回 404。
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema: { type: string, enum: [item, fluid] }
+        - name: ns
+          in: path
+          required: true
+          schema: { type: string }
+        - name: path
+          in: path
+          required: true
+          schema: { type: string }
+          style: simple
+          explode: false
+      responses:
+        "200":
+          description: PNG 字节
+          content:
+            image/png: {}
+        "404":
+          description: 预烘焙文件不存在
+    head:
+      operationId: itemIconHead
+      summary: 图标存在性（预烘焙文件）
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema: { type: string, enum: [item, fluid] }
+        - name: ns
+          in: path
+          required: true
+          schema: { type: string }
+        - name: path
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 存在
+        "404":
+          description: 不存在
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  parameters:
+    q:
+      name: q
+      in: query
+      schema: { type: string }
+    page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    pageSize:
+      name: pageSize
+      in: query
+      schema: { type: integer, minimum: 1, default: 50 }
+
+  schemas:
+    OkResult:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+
+    ErrorBody:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+
+    WebsocketInfo:
+      type: object
+      required: [enabled, port, pushIntervalMs]
+      properties:
+        enabled: { type: boolean }
+        port: { type: integer, description: "对外 WS 端口；与 HTTP 相同时表示单端口分流" }
+        pushIntervalMs: { type: integer }
+        running: { type: boolean }
+        sameAsHttp: { type: boolean, description: "true 时与 http.port 相同（默认）" }
+
+    HealthResponse:
+      type: object
+      required: [ok, service, version]
+      properties:
+        ok: { type: boolean }
+        service: { type: string, description: "必须为 ae2lanuis" }
+        version: { type: string }
+        sessions: { type: integer }
+        websocket: { $ref: "#/components/schemas/WebsocketInfo" }
+
+    LoginRequest:
+      type: object
+      required: [account, password]
+      properties:
+        account: { type: string }
+        password: { type: string }
+        remember: { type: boolean }
+
+    LoginResponse:
+      type: object
+      required: [ok, account, token, displayName]
+      properties:
+        ok: { type: boolean }
+        account: { type: string }
+        token: { type: string }
+        displayName: { type: string }
+        admin: { type: boolean, description: "是否达到 Web 管理权限（OP）" }
+
+    SessionResponse:
+      type: object
+      required: [authenticated]
+      properties:
+        authenticated: { type: boolean }
+        account: { type: string }
+        admin: { type: boolean, description: "已登录时是否为管理员" }
+        actingAs:
+          $ref: "#/components/schemas/ActingAsInfo"
+
+    ActingAsInfo:
+      type: object
+      required: [playerUuid, playerName]
+      properties:
+        playerUuid: { type: string }
+        playerName: { type: string }
+
+    AdminEndpoint:
+      type: object
+      properties:
+        terminalItemId: { type: string }
+        dimension: { type: string }
+        playerPos: { type: string }
+
+    AdminBinding:
+      type: object
+      required: [playerUuid, playerName, updatedAt, playerOnline, hasNetworkLink, networkAvailable, networkOnline]
+      properties:
+        playerUuid: { type: string }
+        playerName: { type: string }
+        updatedAt: { type: integer, description: "Unix 秒" }
+        playerOnline: { type: boolean, description: "玩家当前是否在服务器内" }
+        hasNetworkLink: { type: boolean }
+        endpoint: { $ref: "#/components/schemas/AdminEndpoint" }
+        networkAvailable: { type: boolean, description: "能否从保存的链接解析 IGrid" }
+        networkOnline: { type: boolean, description: "AE 网络是否通电" }
+        itemTypes: { type: integer, description: "库存种类；轻量探测时可能为 -1" }
+        cpuCount: { type: integer }
+        busyCpuCount: { type: integer }
+
+    AdminBindingsResponse:
+      type: object
+      required: [ok, total, bindings]
+      properties:
+        ok: { type: boolean }
+        total: { type: integer }
+        bindings:
+          type: array
+          items: { $ref: "#/components/schemas/AdminBinding" }
+
+    AuditEntry:
+      type: object
+      required: [ts, action]
+      properties:
+        ts: { type: integer, description: "epoch ms" }
+        action: { type: string }
+        actorUuid: { type: string }
+        actorName: { type: string }
+        targetUuid: { type: string }
+        targetName: { type: string }
+        detail: { type: string }
+
+    AdminAuditResponse:
+      type: object
+      required: [ok, page, pageSize, total, entries]
+      properties:
+        ok: { type: boolean }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/AuditEntry" }
+
+    Item:
+      type: object
+      required: [key, id, displayName, amount, craftable]
+      properties:
+        key: { type: string }
+        id: { type: string }
+        displayName: { type: string }
+        amount: { type: string }
+        craftable: { type: boolean }
+        kind: { type: string }
+        isFluid: { type: boolean, deprecated: true }
+        amountPerUnit: { type: number }
+        iconUrl: { type: string, description: "相对路径，如 /api/v1/icons/item/minecraft/stone；对应预烘焙 PNG" }
+
+    NetworkSummary:
+      type: object
+      required: [online, itemTypes, cpuCount, busyCpuCount]
+      properties:
+        online: { type: boolean }
+        itemTypes: { type: integer }
+        cpuCount: { type: integer }
+        busyCpuCount: { type: integer }
+
+    PageItem:
+      type: object
+      required: [page, pageSize, total, items]
+      properties:
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Item" }
+
+    ItemsResponse:
+      allOf:
+        - $ref: "#/components/schemas/PageItem"
+        - type: object
+          required: [network]
+          properties:
+            network: { $ref: "#/components/schemas/NetworkSummary" }
+            contentRevision: { type: integer }
+
+    PatternProviderTarget:
+      type: object
+      properties:
+        name: { type: string }
+        blockId: { type: string }
+        side: { type: string }
+        pos:
+          type: object
+          properties:
+            x: { type: integer }
+            y: { type: integer }
+            z: { type: integer }
+            dimension: { type: string }
+
+    PatternProvider:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        pos:
+          type: object
+          additionalProperties: true
+        priority: { type: integer }
+        slotCount: { type: integer, description: "样板库存槽位数（vanilla Pattern Provider = 9）" }
+        usedSlots: { type: integer, description: "已占用槽位数" }
+        movable: { type: boolean, description: "是否支持槽位读写移动（PatternProviderLogic）" }
+        targets:
+          type: array
+          items: { $ref: "#/components/schemas/PatternProviderTarget" }
+
+    PatternInput:
+      type: object
+      properties:
+        item: { $ref: "#/components/schemas/Item" }
+        multiplier: { type: string }
+        alternatives:
+          type: array
+          items: { $ref: "#/components/schemas/Item" }
+
+    Pattern:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        mode: { type: string }
+        slotIndex: { type: integer, description: "在供应器 patternInv 中的下标" }
+        primaryOutput: { $ref: "#/components/schemas/Item" }
+        outputs:
+          type: array
+          items: { $ref: "#/components/schemas/Item" }
+        inputs:
+          type: array
+          items: { $ref: "#/components/schemas/PatternInput" }
+        substitute: { type: boolean }
+        substituteFluids: { type: boolean }
+        definition: { $ref: "#/components/schemas/Item" }
+        provider: { $ref: "#/components/schemas/PatternProvider" }
+
+    PatternSlot:
+      type: object
+      required: [index]
+      properties:
+        index: { type: integer }
+        pattern:
+          allOf:
+            - $ref: "#/components/schemas/Pattern"
+          nullable: true
+
+    PatternProviderBoard:
+      allOf:
+        - $ref: "#/components/schemas/PatternProvider"
+        - type: object
+          required: [slots]
+          properties:
+            slots:
+              type: array
+              items: { $ref: "#/components/schemas/PatternSlot" }
+
+    PatternProvidersResponse:
+      type: object
+      required: [ok, providers]
+      properties:
+        ok: { type: boolean }
+        providers:
+          type: array
+          items: { $ref: "#/components/schemas/PatternProviderBoard" }
+
+    PatternSlotRef:
+      type: object
+      required: [providerId, slotIndex]
+      properties:
+        providerId: { type: string }
+        slotIndex: { type: integer }
+
+    PatternMoveTarget:
+      type: object
+      required: [providerId]
+      properties:
+        providerId: { type: string }
+        slotIndex: { type: integer, description: "省略则填第一个空槽" }
+
+    PatternMoveOp:
+      type: object
+      required: [from, to]
+      properties:
+        from: { $ref: "#/components/schemas/PatternSlotRef" }
+        to: { $ref: "#/components/schemas/PatternMoveTarget" }
+
+    PatternMoveRequest:
+      type: object
+      required: [moves]
+      properties:
+        moves:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/PatternMoveOp" }
+
+    PatternsResponse:
+      type: object
+      required: [page, pageSize, total, items]
+      properties:
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Pattern" }
+
+    CraftPlanRequest:
+      type: object
+      required: [key, amount]
+      properties:
+        key: { type: string }
+        amount: { type: string }
+
+    CraftPlanCpu:
+      type: object
+      properties:
+        cpuName: { type: string }
+        busy: { type: boolean }
+        bytesAvailable: { type: string }
+        coProcessors: { type: integer }
+        suitable: { type: boolean }
+
+    CraftRecipeTreeInput:
+      type: object
+      properties:
+        item: { $ref: "#/components/schemas/Item" }
+        missing: { type: boolean }
+        child: { $ref: "#/components/schemas/CraftRecipeTreeNode" }
+
+    CraftRecipeTreeNode:
+      type: object
+      properties:
+        output: { $ref: "#/components/schemas/Item" }
+        times: { type: string }
+        mode: { type: string }
+        patternId: { type: string }
+        missing: { type: boolean }
+        inputs:
+          type: array
+          items: { $ref: "#/components/schemas/CraftRecipeTreeInput" }
+
+    CraftPlanResponse:
+      type: object
+      properties:
+        planId: { type: string }
+        ok: { type: boolean }
+        canSubmit: { type: boolean }
+        bytes: { type: string }
+        bytesAvailable: { type: string }
+        coProcessors: { type: integer }
+        cpuCount: { type: integer }
+        idleCpuCount: { type: integer }
+        multiplePaths: { type: boolean }
+        usedItems:
+          type: array
+          items: { $ref: "#/components/schemas/Item" }
+        tree: { $ref: "#/components/schemas/CraftRecipeTreeNode" }
+        cpus:
+          type: array
+          items: { $ref: "#/components/schemas/CraftPlanCpu" }
+        warning: { type: string }
+        missing:
+          type: array
+          items: { $ref: "#/components/schemas/Item" }
+        output: { $ref: "#/components/schemas/Item" }
+
+    CraftSubmitRequest:
+      type: object
+      properties:
+        planId: { type: string }
+        key: { type: string }
+        amount: { type: string }
+        cpuName: { type: string }
+
+    CraftSubmitResponse:
+      type: object
+      additionalProperties: true
+
+    CraftJobsResponse:
+      type: object
+      additionalProperties: true
+
+    CraftCancelRequest:
+      type: object
+      required: [cpuName]
+      properties:
+        cpuName: { type: string }

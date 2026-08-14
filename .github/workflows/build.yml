@@ -1,0 +1,50 @@
+# CI：PR / push 到 main 时编译模组（嵌入 web/dist）
+name: build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Require gitmodules contract
+        run: |
+          test -f .gitmodules
+          grep -q 'path = web' .gitmodules
+          test -f web/package.json
+          test -f web/build.gradle
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package.json
+
+      - name: Build mod (embeds web/dist)
+        run: ./gradlew build --no-daemon
+
+      - name: Upload jar artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ae2lanuis-jar
+          path: |
+            build/libs/ae2lanuis-*.jar
+            !build/libs/*-thin.jar
+          if-no-files-found: error

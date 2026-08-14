@@ -1,0 +1,6 @@
+[submodule "web"]
+	path = web
+	url = https://github.com/AE2-Lanuis-Terminal/AE2-Lanuis-Terminal-Web.git
+[submodule "client"]
+	path = client
+	url = https://github.com/AE2-Lanuis-Terminal/AE2-Lanuis-Terminal-Client.git

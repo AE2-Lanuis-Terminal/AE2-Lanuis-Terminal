@@ -1,0 +1,176 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+minecraft {
+    mappings channel: mapping_channel, version: mapping_version
+    copyIdeResources = true
+
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        server {
+            property 'forge.enabledGameTestNamespaces', mod_id
+            args '--nogui'
+        }
+
+        data {
+            workingDirectory project.file('run-data')
+            args '--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
+        }
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+configurations {
+    shade
+    implementation.extendsFrom(shade)
+}
+
+repositories {
+    maven {
+        name = 'ModMaven'
+        url = 'https://modmaven.dev/'
+    }
+    maven {
+        name = 'CurseMaven'
+        url = 'https://www.cursemaven.com'
+        content {
+            includeGroup 'curse.maven'
+        }
+    }
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    // AE2 15.2.13 for MC 1.20.1 (Forge/NeoForge universal jar on CurseForge)
+    compileOnly fg.deobf("curse.maven:ae2-223794:${ae2_file_id}")
+    implementation "com.google.code.gson:gson:${gson_version}"
+    // 嵌入后 relocate，避免与整合包里其它 Java-WebSocket 模块包名冲突
+    shade("org.java-websocket:Java-WebSocket:${java_websocket_version}") {
+        exclude group: 'org.slf4j'
+    }
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            forge_version          : forge_version,
+            forge_version_range    : forge_version_range,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            mod_authors            : mod_authors,
+            mod_description        : mod_description,
+    ]
+    inputs.properties replaceProperties
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties + [project: project]
+    }
+
+    // 前端为 submodule web/；打包时从 web/dist 嵌入 classpath:/web（勿手拷进 src/main/resources）
+    def webDist = file("${project.projectDir}/web/dist")
+    def skipWebBuild = project.hasProperty('skipWebBuild') && project.property('skipWebBuild').toString() == 'true'
+    if (!skipWebBuild && findProject(':web') != null) {
+        dependsOn(':web:npmBuild')
+    }
+    inputs.dir(webDist).optional(true)
+    from({ webDist.directory ? fileTree(webDist) : files() }) {
+        into 'web'
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    }
+    doFirst {
+        if (!webDist.directory || !file("${webDist}/index.html").file) {
+            throw new GradleException(
+                "web/dist missing — init submodule then build UI:\n" +
+                "  git submodule update --init --recursive\n" +
+                "  .\\gradlew :web:npmBuild\n" +
+                "Or pass -PskipWebBuild=true only for no-UI debug jars."
+            )
+        }
+    }
+}
+
+// 普通 jar 仅作编译中间产物；最终产物走 shadow + reobf
+tasks.named('jar', Jar).configure {
+    archiveClassifier.set('thin')
+}
+
+tasks.named('shadowJar', com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar).configure {
+    archiveClassifier.set('')
+    configurations = [project.configurations.shade]
+    mergeServiceFiles()
+    relocate('org.java_websocket', 'com.lanuis.ae2web.shaded.jws')
+    exclude('org/slf4j/**')
+    exclude('META-INF/versions/**')
+    exclude('META-INF/maven/org.slf4j/**')
+    exclude('module-info.class')
+    exclude('META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA')
+    manifest {
+        attributes([
+                'Specification-Title'     : mod_id,
+                'Specification-Vendor'    : mod_authors,
+                'Specification-Version'   : '1',
+                'Implementation-Title'    : project.name,
+                'Implementation-Version'  : project.jar.archiveVersion,
+                'Implementation-Vendor'   : mod_authors,
+                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+        ])
+    }
+}
+
+reobf {
+    shadowJar {}
+}
+
+tasks.named('assemble').configure {
+    dependsOn('reobfShadowJar')
+}
+
+tasks.named('build').configure {
+    dependsOn('reobfShadowJar')
+}
+
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            artifact jar
+        }
+    }
+    repositories {
+        maven {
+            url = "file://${project.projectDir}/mcmodsrepo"
+        }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
