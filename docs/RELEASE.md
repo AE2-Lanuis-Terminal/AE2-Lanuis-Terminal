@@ -1,12 +1,12 @@
 # 三仓发布流程（总册）
 
-组织：[AE2-Lanuis-Terminal](https://github.com/AE2-Lanuis-Terminal)
+账号：[Lexcubia](https://github.com/Lexcubia)
 
 | 仓 | 产物 | 版本关系 |
 |----|------|----------|
-| [Web](https://github.com/AE2-Lanuis-Terminal/AE2-Lanuis-Terminal-Web) | 源码 + `vX.Y.Z` **tag（版本源）** | 先发 |
-| [主仓](https://github.com/AE2-Lanuis-Terminal/AE2-Lanuis-Terminal) | Forge jar（嵌入 Web `dist`） | 钉 Web tag 后发 |
-| [Client](https://github.com/AE2-Lanuis-Terminal/AE2-Lanuis-Terminal-Client) | Windows NSIS + Android APK | 检出 Web tag 后发 |
+| [Web](https://github.com/Lexcubia/AE2-Lanuis-Terminal-Web) | 源码 + `vX.Y.Z` **tag（版本源）** | 先发 |
+| [主仓](https://github.com/Lexcubia/AE2-Lanuis-Terminal) | Forge jar（嵌入 Web `dist`） | 钉 Web tag 后发 |
+| [Client](https://github.com/Lexcubia/AE2-Lanuis-Terminal-Client) | Windows NSIS + Android APK | 检出 Web tag 后发 |
 
 当前若无法连接 GitHub：**流程与 workflow 脚手架已齐**；自动创建 Release / 上传 Modrinth 步骤默认关闭（`PUBLISH=false`），通网后按下方检查表打开。
 
