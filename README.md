@@ -17,7 +17,7 @@
 | 方式 | 说明 |
 |------|------|
 | 浏览器 | 打开模组提供的网页地址（游戏内 `/ae2lanuis status` 可查看） |
-| [桌面 / Android 客户端](https://github.com/Lexcubia/AE2-Lanuis-Terminal-Client) | 独立 App，登录时填写服务器 IP 与端口 |
+| [桌面 / Android 客户端](https://github.com/AE2-Lanuis-Terminal/AE2-Lanuis-Terminal-Client) | 独立 App，登录时填写服务器 IP 与端口 |
 
 ## 快速使用
 
@@ -56,8 +56,8 @@ OP 登录网页后可选择进入**管理端**，查看全服网络与审计。
 
 ## 相关项目
 
-- [Client](https://github.com/Lexcubia/AE2-Lanuis-Terminal-Client) — Windows / Android 客户端  
-- [Web](https://github.com/Lexcubia/AE2-Lanuis-Terminal-Web) — 网页界面源码  
+- [Client](https://github.com/AE2-Lanuis-Terminal/AE2-Lanuis-Terminal-Client) — Windows / Android 客户端  
+- [Web](https://github.com/AE2-Lanuis-Terminal/AE2-Lanuis-Terminal-Web) — 网页界面源码  
 
 ## 文档与开发
 
